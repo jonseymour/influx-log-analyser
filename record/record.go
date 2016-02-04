@@ -199,7 +199,7 @@ func urlToEncodedJSON(u *url.URL) string {
 // Parses influx log line.
 func ParseInfluxLogLine(line string) (Record, error) {
 
-	//[http] 2016/01/03 23:39:23 172.17.0.13 - admin [03/Jan/2016:23:39:22 +0000] GET /query?db=sphere&p=%5BREDACTED%5D&q=select+count%28state%29+from+%22aircon.demandcontrol.state%22+where+time+%3E+now%28%29+-+24h+and+state%3D%27SUSPENDED%27+and+%28reason+%3C%3E+%27VERIFICATION_FAILED%27+and+reason+%3C%3E+%27POLL_FAILED%27%29+group+by+time%2815m%29+fill%280%29&u=admin HTTP/1.1 200 365 https://grafana.ninjagl.com/dashboard/db/fleet-view Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.80 Safari/537.36 377d9379-b273-11e5-bdcd-000000000000 892.850592ms
+	//[http] 2016/01/03 23:39:23 172.17.0.13 - admin [03/Jan/2016:23:39:22 +0000] GET /query?db=sphere&p=%5BREDACTED%5D&q=select+count%28state%29+from+%22aircon.demandcontrol.state%22+where+time+%3E+now%28%29+-+24h+and+state%3D%27SUSPENDED%27+and+%28reason+%3C%3E+%27VERIFICATION_FAILED%27+and+reason+%3C%3E+%27POLL_FAILED%27%29+group+by+time%2815m%29+fill%280%29&u=admin HTTP/1.1 200 365 https://grafana.example.com/dashboard/db/fleet-view Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/47.0.2526.80 Safari/537.36 377d9379-b273-11e5-bdcd-000000000000 892.850592ms
 	tokens := strings.Split(line, " ")
 	ntokens := len(tokens)
 	var err error
