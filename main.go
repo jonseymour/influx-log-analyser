@@ -51,5 +51,16 @@ func main() {
 
 	csvEncoder := encoding.NewWriter(os.Stdout)
 	csvEncoder.Comma = rune(comma[0])
-	parse(os.Stdin, csv.WithCsvWriter(csvEncoder, os.Stdout))
+	pipe := csv.NewPipe()
+	pipeline := csv.NewPipeLine([]csv.Process{&csv.CatProcess{}})
+
+	go parse(os.Stdin, pipe.Builder())
+	errCh := make(chan error, 1)
+	pipeline.Run(pipe.Reader(), csv.WithCsvWriter(csvEncoder, os.Stdout), errCh)
+	err := <-errCh
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: %s\n", err)
+		os.Exit(1)
+	}
 }
