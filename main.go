@@ -12,21 +12,9 @@ import (
 	"strings"
 )
 
-func main() {
-
-	tabs := false
-	comma := ","
-	flag.BoolVar(&tabs, "tabs", false, "Use tabs as the output delimiter.")
-	flag.Parse()
-
-	if tabs {
-		comma = "\t"
-	}
-
-	lines := bufio.NewReader(os.Stdin)
-	csvEncoder := encoding.NewWriter(os.Stdout)
-	csvEncoder.Comma = rune(comma[0])
-	output := csv.WithCsvWriter(csvEncoder, os.Stdout)(record.CsvHeaders)
+func parse(input io.ReadCloser, builder csv.WriterBuilder) {
+	output := builder(record.CsvHeaders)
+	lines := bufio.NewReader(input)
 	for {
 		if line, err := lines.ReadString('\n'); err != nil {
 			if err == io.EOF {
@@ -48,4 +36,20 @@ func main() {
 		}
 	}
 	output.Close(nil)
+}
+
+func main() {
+
+	tabs := false
+	comma := ","
+	flag.BoolVar(&tabs, "tabs", false, "Use tabs as the output delimiter.")
+	flag.Parse()
+
+	if tabs {
+		comma = "\t"
+	}
+
+	csvEncoder := encoding.NewWriter(os.Stdout)
+	csvEncoder.Comma = rune(comma[0])
+	parse(os.Stdin, csv.WithCsvWriter(csvEncoder, os.Stdout))
 }
