@@ -59,8 +59,9 @@ const (
 )
 
 const (
-	TIMESTAMP_FORMAT     = "2006-01-02 15:04:05"
-	LOG_TIMESTAMP_FORMAT = "2006/01/02 15:04:05"
+	TIMESTAMP_FORMAT       = "2006-01-02 15:04:05.000"
+	LOG_TIMESTAMP_FORMAT   = "2006/01/02 15:04:05"
+	LOG_TIMESTAMP_FORMAT_2 = "02/Jan/2006:15:04:05 -0700"
 )
 
 var CsvHeaders = []string{
@@ -213,6 +214,13 @@ func ParseInfluxLogLine(line string) (Record, error) {
 	if endTimestamp, err = time.Parse(LOG_TIMESTAMP_FORMAT, tokens[1]+" "+tokens[2]); err != nil {
 		return nil, err
 	}
+
+	var startTimestamp time.Time
+	token := strings.Trim(tokens[6]+" "+tokens[7], "[]")
+	if startTimestamp, err = time.Parse(LOG_TIMESTAMP_FORMAT_2, token); err != nil {
+		return nil, err
+	}
+
 	ip := tokens[3]
 	user := tokens[5]
 	method := tokens[8]
@@ -246,8 +254,19 @@ func ParseInfluxLogLine(line string) (Record, error) {
 		duration = time.Millisecond
 	}
 
+	// Adjust the start timestamp so that start and end times are distributed around the mid point
+	// between whole seconds in a manner which preserves the accuracy of the originally reported timestamps.
+	endTimestamp = endTimestamp.Round(time.Second).Add(time.Second - time.Millisecond)
+	delta := endTimestamp.Sub(startTimestamp) - duration
+	if delta > time.Millisecond*999 {
+		delta = time.Millisecond * 999
+	}
+	if delta > 0 {
+		startTimestamp = startTimestamp.Add(delta / 2)
+	}
+
 	return &decodedRecord{
-		startTimestamp: endTimestamp.Add(-duration),
+		startTimestamp: startTimestamp,
 		duration:       duration,
 		method:         method,
 		ip:             ip,
