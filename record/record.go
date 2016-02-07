@@ -18,6 +18,7 @@ type Record interface {
 	User() string
 	Method() string
 	URL() string
+	URLMap() map[string]interface{}
 	Protocol() string
 	Status() uint
 	ContentLength() uint32
@@ -41,6 +42,7 @@ type decodedRecord struct {
 	referrer       string
 	userAgent      string
 	requestId      string
+	urlMap         map[string]interface{}
 }
 
 const (
@@ -108,6 +110,14 @@ func (r *decodedRecord) User() string {
 
 func (r *decodedRecord) URL() string {
 	return r.url
+}
+
+func (r *decodedRecord) URLMap() map[string]interface{} {
+	if r.urlMap == nil {
+		r.urlMap = map[string]interface{}{}
+		json.Unmarshal([]byte(r.url), r.urlMap)
+	}
+	return r.urlMap
 }
 
 func (r *decodedRecord) Protocol() string {
