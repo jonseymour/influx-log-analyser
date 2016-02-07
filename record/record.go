@@ -146,24 +146,16 @@ func (r *decodedRecord) RequestId() string {
 
 func (r *decodedRecord) Decode(c csv.Record) error {
 	startedAt := c.Get(STARTED_AT)
-	if ts, err := time.Parse(TIMESTAMP_FORMAT, startedAt); err != nil {
-		return err
-	} else {
+	if ts, err := time.Parse(TIMESTAMP_FORMAT, startedAt); err == nil {
 		r.startTimestamp = ts
 	}
-	if d, err := strconv.ParseUint(c.Get(DURATION), 10, 64); err != nil {
-		return err
-	} else {
+	if d, err := strconv.ParseUint(c.Get(DURATION), 10, 64); err == nil {
 		r.duration = time.Millisecond * time.Duration(d)
 	}
-	if l, err := strconv.ParseUint(c.Get(CONTENT_LENGTH), 10, 32); err != nil {
-		return err
-	} else {
+	if l, err := strconv.ParseUint(c.Get(CONTENT_LENGTH), 10, 32); err == nil {
 		r.contentLength = uint32(l)
 	}
-	if s, err := strconv.ParseUint(c.Get(STATUS), 10, 16); err != nil {
-		return err
-	} else {
+	if s, err := strconv.ParseUint(c.Get(STATUS), 10, 16); err == nil {
 		r.status = uint(s)
 	}
 
