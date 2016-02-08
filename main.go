@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	container "container/heap"
 	encoding "encoding/csv"
 	"flag"
 	"fmt"
@@ -80,6 +81,7 @@ func (p *splitProcess) Run(r csv.Reader, b csv.WriterBuilder, errCh chan<- error
 					endrec.Put("unix", strconv.FormatInt(endT, 10))
 					orec.Put("eventType", "start")
 					endrec.Put("eventType", "end")
+					endrec.Put(record.REQUEST_ID, orec.Get(record.REQUEST_ID))
 
 					w.Write(endrec)
 				}
@@ -94,25 +96,101 @@ func (p *splitProcess) Run(r csv.Reader, b csv.WriterBuilder, errCh chan<- error
 type countingProcess struct {
 }
 
+type request struct {
+	id      string
+	unix    int64
+	details record.Record
+}
+
+type requestHeap struct {
+	data   []*request
+	length int
+}
+
+func (h *requestHeap) Less(i, j int) bool {
+	return h.data[i].unix < h.data[j].unix
+}
+
+func (h *requestHeap) Swap(i, j int) {
+	h.data[i], h.data[j] = h.data[j], h.data[i]
+}
+
+func (h *requestHeap) Len() int {
+	return h.length
+}
+
+func (h *requestHeap) Push(i interface{}) {
+	if h.length < len(h.data) {
+		h.data[h.length] = i.(*request)
+	} else {
+		h.data = append(h.data, i.(*request))
+	}
+	h.length++
+}
+
+func (h *requestHeap) Pop() interface{} {
+	r := h.data[h.length-1]
+	h.data[h.length-1] = nil
+	h.length--
+	return r
+}
+
+func (h *requestHeap) find(id string) int {
+	for i, r := range h.data {
+		if i >= h.length {
+			break
+		}
+		if r.id == id {
+			return i
+		}
+	}
+	return -1
+}
+
 func (p *countingProcess) Run(r csv.Reader, b csv.WriterBuilder, errCh chan<- error) {
 	errCh <- func() (err error) {
 		defer r.Close()
 
-		w := b(extendHeader(r.Header(), []string{"active"}))
+		w := b(extendHeader(r.Header(), []string{"active", "oldest"}))
 		active := 0
 		defer w.Close(err)
+		heap := &requestHeap{data: []*request{}}
+		container.Init(heap)
+
 		for i := range r.C() {
+
+			eventType := i.Get("eventType")
+			start := eventType == "start"
+			end := eventType == "end"
+			oldest := ""
+
+			details := record.NewRecord()
+			details.Decode(i)
+
+			if heap.length > 0 {
+				oldest = heap.data[0].id
+			}
+
+			if start {
+				req := &request{id: details.RequestId(), unix: details.StartTimestamp().UnixNano(), details: details}
+				container.Push(heap, req)
+			} else if end {
+				x := heap.find(details.RequestId())
+				if x >= 0 {
+					_ = container.Remove(heap, x).(*request)
+				}
+			}
+
 			o := w.Blank()
 			o.PutAll(i)
 			o.Put("active", strconv.FormatInt(int64(active), 10))
+			o.Put("oldest", oldest)
 			if e := w.Write(o); e != nil {
 				return e
 			}
-			eventType := i.Get("eventType")
-			switch eventType {
-			case "start":
+			if start {
 				active += 1
-			case "end":
+			} else if end {
 				active -= 1
 			}
 		}
@@ -126,7 +204,7 @@ type filterProcess struct {
 func (p *filterProcess) Run(r csv.Reader, b csv.WriterBuilder, errCh chan<- error) {
 	errCh <- func() (err error) {
 		defer r.Close()
-		w := b(extendHeader(record.CsvHeaders, []string{"active"}))
+		w := b(extendHeader(record.CsvHeaders, []string{"active", "oldest"}))
 		defer w.Close(err)
 		for i := range r.C() {
 			if i.Get("eventType") == "end" {
