@@ -223,8 +223,10 @@ func (p *filterProcess) Run(r csv.Reader, b csv.WriterBuilder, errCh chan<- erro
 func main() {
 
 	tabs := false
+	parseOnly := false
 	comma := ","
 	flag.BoolVar(&tabs, "tabs", false, "Use tabs as the output delimiter.")
+	flag.BoolVar(&parseOnly, "parse-only", false, "Convert the file into CSV without analysis")
 	flag.Parse()
 
 	if tabs {
@@ -233,28 +235,32 @@ func main() {
 
 	csvEncoder := encoding.NewWriter(os.Stdout)
 	csvEncoder.Comma = rune(comma[0])
-	pipe := csv.NewPipe()
-	pipeline := csv.NewPipeLine([]csv.Process{
-		&splitProcess{},
-		(&csv.SortKeys{
-			Keys:    []string{"unix", "ordinal"},
-			Numeric: []string{"unix", "ordinal"},
-		}).AsSortProcess(),
-		&countingProcess{},
-		(&csv.SortKeys{
-			Keys:    []string{"ordinal"},
-			Numeric: []string{"ordinal"},
-		}).AsSortProcess(),
-		&filterProcess{},
-	})
 
-	go parse(os.Stdin, pipe.Builder())
-	errCh := make(chan error, 1)
-	pipeline.Run(pipe.Reader(), csv.WithCsvWriter(csvEncoder, os.Stdout), errCh)
-	err := <-errCh
+	if !parseOnly {
+		pipe := csv.NewPipe()
+		pipeline := csv.NewPipeLine([]csv.Process{
+			&splitProcess{},
+			(&csv.SortKeys{
+				Keys:    []string{"unix", "ordinal"},
+				Numeric: []string{"unix", "ordinal"},
+			}).AsSortProcess(),
+			&countingProcess{},
+			(&csv.SortKeys{
+				Keys:    []string{"ordinal"},
+				Numeric: []string{"ordinal"},
+			}).AsSortProcess(),
+			&filterProcess{},
+		})
 
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "fatal: %s\n", err)
-		os.Exit(1)
+		go parse(os.Stdin, pipe.Builder())
+		errCh := make(chan error, 1)
+		pipeline.Run(pipe.Reader(), csv.WithCsvWriter(csvEncoder, os.Stdout), errCh)
+		err := <-errCh
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "fatal: %s\n", err)
+			os.Exit(1)
+		}
+	} else {
+		parse(os.Stdin, csv.WithCsvWriter(csvEncoder, os.Stdout))
 	}
 }
