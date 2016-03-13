@@ -224,20 +224,26 @@ func main() {
 
 	tabs := false
 	parseOnly := false
+	noParse := false
 	comma := ","
 	flag.BoolVar(&tabs, "tabs", false, "Use tabs as the output delimiter.")
 	flag.BoolVar(&parseOnly, "parse-only", false, "Convert the file into CSV without analysis")
+	flag.BoolVar(&noParse, "no-parse", false, "Assume stdin contains the result of a previous --parse-only run.")
 	flag.Parse()
 
 	if tabs {
 		comma = "\t"
 	}
 
+	if noParse && parseOnly {
+		fmt.Fprintf(os.Stderr, "at most one of --parse-only and --no-parse may be specified\n")
+		os.Exit(1)
+	}
+
 	csvEncoder := encoding.NewWriter(os.Stdout)
 	csvEncoder.Comma = rune(comma[0])
 
 	if !parseOnly {
-		pipe := csv.NewPipe()
 		pipeline := csv.NewPipeLine([]csv.Process{
 			&splitProcess{},
 			(&csv.SortKeys{
@@ -252,9 +258,16 @@ func main() {
 			&filterProcess{},
 		})
 
-		go parse(os.Stdin, pipe.Builder())
+		var in csv.Reader
+		if noParse {
+			in = csv.WithIoReader(os.Stdin)
+		} else {
+			pipe := csv.NewPipe()
+			go parse(os.Stdin, pipe.Builder())
+			in = pipe.Reader()
+		}
 		errCh := make(chan error, 1)
-		pipeline.Run(pipe.Reader(), csv.WithCsvWriter(csvEncoder, os.Stdout), errCh)
+		pipeline.Run(in, csv.WithCsvWriter(csvEncoder, os.Stdout), errCh)
 		err := <-errCh
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "fatal: %s\n", err)
