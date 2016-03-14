@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/wildducktheories/go-csv"
 	"github.com/wildducktheories/influx-log-analyser/record"
+	"github.com/wildducktheories/timeserieslog"
 	"io"
 	"os"
 	"strconv"
@@ -89,6 +90,81 @@ func (p *splitProcess) Run(r csv.Reader, b csv.WriterBuilder, errCh chan<- error
 			w.Write(orec)
 		}
 
+		return r.Error()
+	}()
+}
+
+type sortingProcess struct {
+}
+
+type sortElement struct {
+	timestamp int64
+	ordinal   int
+	record    csv.Record
+}
+
+func (e *sortElement) Less(other tsl.Element) bool {
+	otherE := other.(*sortElement)
+	if e.timestamp == otherE.timestamp {
+		return e.ordinal < otherE.ordinal
+	} else {
+		return e.timestamp < otherE.timestamp
+	}
+}
+
+func (p *sortingProcess) Run(r csv.Reader, b csv.WriterBuilder, errCh chan<- error) {
+	errCh <- func() (err error) {
+		defer r.Close()
+
+		w := b(r.Header())
+		defer w.Close(err)
+
+		buffer := tsl.NewUnsortedRange()
+
+		dump := func(r tsl.SortedRange) {
+			c := r.Open()
+			for {
+				n := c.Next()
+				if n == nil {
+					return
+				}
+				w.Write(n.(*sortElement).record)
+			}
+		}
+
+		window := time.Hour
+		var snap time.Time
+		count := 1
+		keep := tsl.EmptyRange
+		for i := range r.C() {
+			count++
+			if ts, err := time.Parse("2006-01-02 15:04:05", i.Get("startedAt")); err != nil {
+				continue
+			} else {
+				if count == 2 {
+					snap = ts.Add(window)
+				}
+				element := &sortElement{
+					timestamp: ts.UnixNano(),
+					ordinal:   count,
+					record:    i,
+				}
+				buffer.Add([]tsl.Element{element})
+				if ts.Sub(snap) > 0 {
+					write, hold := buffer.Freeze().Partition(&sortElement{
+						timestamp: ts.Add(-window).UnixNano(),
+						ordinal:   0,
+						record:    nil,
+					}, tsl.LessOrder)
+					buffer = tsl.NewUnsortedRange()
+					concat := tsl.Merge(keep, write)
+					keep = hold
+					dump(concat)
+				}
+			}
+		}
+		concat := tsl.Merge(keep, buffer.Freeze())
+		dump(concat)
 		return r.Error()
 	}()
 }
@@ -225,10 +301,12 @@ func main() {
 	tabs := false
 	parseOnly := false
 	noParse := false
+	sortOnly := false
 	comma := ","
 	flag.BoolVar(&tabs, "tabs", false, "Use tabs as the output delimiter.")
 	flag.BoolVar(&parseOnly, "parse-only", false, "Convert the file into CSV without analysis")
 	flag.BoolVar(&noParse, "no-parse", false, "Assume stdin contains the result of a previous --parse-only run.")
+	flag.BoolVar(&sortOnly, "sort-only", false, "Sort the stream by startedAt.")
 	flag.Parse()
 
 	if tabs {
@@ -244,19 +322,26 @@ func main() {
 	csvEncoder.Comma = rune(comma[0])
 
 	if !parseOnly {
-		pipeline := csv.NewPipeLine([]csv.Process{
-			&splitProcess{},
-			(&csv.SortKeys{
-				Keys:    []string{"unix", "ordinal"},
-				Numeric: []string{"unix", "ordinal"},
-			}).AsSortProcess(),
-			&countingProcess{},
-			(&csv.SortKeys{
-				Keys:    []string{"ordinal"},
-				Numeric: []string{"ordinal"},
-			}).AsSortProcess(),
-			&filterProcess{},
-		})
+
+		var pipeline csv.Process
+
+		if sortOnly {
+			pipeline = &sortingProcess{}
+		} else {
+			pipeline = csv.NewPipeLine([]csv.Process{
+				&splitProcess{},
+				(&csv.SortKeys{
+					Keys:    []string{"unix", "ordinal"},
+					Numeric: []string{"unix", "ordinal"},
+				}).AsSortProcess(),
+				&countingProcess{},
+				(&csv.SortKeys{
+					Keys:    []string{"ordinal"},
+					Numeric: []string{"ordinal"},
+				}).AsSortProcess(),
+				&filterProcess{},
+			})
+		}
 
 		var in csv.Reader
 		if noParse {
